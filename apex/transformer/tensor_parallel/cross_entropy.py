@@ -22,7 +22,7 @@ from apex.transformer.tensor_parallel.utils import VocabUtility
 
 class _VocabParallelCrossEntropy(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, vocab_parallel_logits, target, label_smoothing=0.0):
+    def forward(ctx, vocab_parallel_logits, target):
 
         # Maximum value along vocab dimension across all GPUs.
         logits_max = torch.max(vocab_parallel_logits, dim=-1)[0]
@@ -72,27 +72,6 @@ class _VocabParallelCrossEntropy(torch.autograd.Function):
 
         # Store softmax, target-mask and masked-target for backward pass.
         exp_logits.div_(sum_exp_logits.unsqueeze(dim=-1))
-
-        vocab_size = exp_logits.size(-1)
-        if label_smoothing > 0:
-            """
-            We'd like to assign 1 / (K - 1) probability mass to every index that is not the ground truth.
-            = (1 - alpha) * y_gt + alpha * mean(y_{i for i != gt})
-            = (1 - alpha) * y_gt + (alpha / (K - 1)) * \sum_{i != gt} y_i
-            = ((K - 1) * (1 - alpha) / (K - 1)) * y_gt + (alpha / (K - 1)) * \sum_{i != gt} y_i
-            = (K * (1 - alpha) - 1) / (K - 1)) * y_gt  + (alpha / (K - 1)) * \sum_{i} y_i
-            = (1 - (alpha * K) / (K - 1)) * y_gt + ( (alpha * K) / (K - 1) ) * \sum_{i} y_i / K
-            From: https://github.com/NVIDIA/NeMo/blob/main/nemo/collections/common/losses/smoothed_cross_entropy.py
-            """
-            assert 1.0 > label_smoothing > 0.0
-            smoothing = label_smoothing * vocab_size / (vocab_size - 1)
-
-            # Exp logits at this point are normalized probabilities. So we can just take the log to get log-probs.
-            log_probs = torch.log(exp_logits)
-            mean_log_probs = log_probs.mean(dim=-1)
-            loss = (1.0 - smoothing) * loss - smoothing * mean_log_probs
-
-        ctx.label_smoothing, ctx.vocab_size = label_smoothing, vocab_size
         ctx.save_for_backward(exp_logits, target_mask, masked_target_1d)
 
         return loss
@@ -102,7 +81,6 @@ class _VocabParallelCrossEntropy(torch.autograd.Function):
 
         # Retreive tensors from the forward path.
         softmax, target_mask, masked_target_1d = ctx.saved_tensors
-        label_smoothing, vocab_size = ctx.label_smoothing, ctx.vocab_size
 
         # All the inputs have softmax as thier gradient.
         grad_input = softmax
@@ -112,23 +90,14 @@ class _VocabParallelCrossEntropy(torch.autograd.Function):
 
         # Add the gradient from matching classes.
         arange_1d = torch.arange(start=0, end=grad_2d.size()[0], device=grad_2d.device)
-
-        softmax_update = 1.0 - target_mask.view(-1).float()
-
-        if label_smoothing > 0:
-            smoothing = label_smoothing * vocab_size / (vocab_size - 1)
-            grad_2d[arange_1d, masked_target_1d] -= (1.0 - smoothing) * softmax_update
-            average_grad = 1 / vocab_size
-            grad_2d[arange_1d, :] -= smoothing * average_grad
-        else:
-            grad_2d[arange_1d, masked_target_1d] -= softmax_update
+        grad_2d[arange_1d, masked_target_1d] -= 1.0 - target_mask.view(-1).float()
 
         # Finally elementwise multiplication with the output gradients.
         grad_input.mul_(grad_output.unsqueeze(dim=-1))
 
-        return grad_input, None, None
+        return grad_input, None
 
 
-def vocab_parallel_cross_entropy(vocab_parallel_logits, target, label_smoothing=0.0):
+def vocab_parallel_cross_entropy(vocab_parallel_logits, target):
     """Helper function for the cross entropy."""
-    return _VocabParallelCrossEntropy.apply(vocab_parallel_logits, target, label_smoothing)
+    return _VocabParallelCrossEntropy.apply(vocab_parallel_logits, target)

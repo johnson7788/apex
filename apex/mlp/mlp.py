@@ -1,12 +1,9 @@
 from copy import copy
 import math
-
 import torch
 from torch import nn
-
-from apex._autocast_utils import _cast_if_autocast_enabled
 import mlp_cuda
-
+from .. import amp
 
 class MlpFunction(torch.autograd.Function):
     @staticmethod
@@ -24,11 +21,7 @@ class MlpFunction(torch.autograd.Function):
         del ctx.outputs
         return (None, None, *grads)
 
-
-def mlp_function(bias, activation, *args):
-    autocast_args = _cast_if_autocast_enabled(bias, activation, *args)
-    return MlpFunction.apply(*autocast_args)
-
+mlp_function = amp.half_function(MlpFunction.apply)
 
 class MLP(torch.nn.Module):
     """Launch MLP in C++
@@ -39,16 +32,16 @@ class MLP(torch.nn.Module):
         relu (bool): Default True
     """
     def __init__(self, mlp_sizes, bias=True, activation='relu'):
-        super().__init__()
+        super(MLP, self).__init__()
         self.num_layers = len(mlp_sizes) - 1
         self.mlp_sizes = copy(mlp_sizes)
         self.bias = 1 if bias else 0
 
-        if activation == 'none':
+        if activation is 'none':
             self.activation = 0
-        elif activation == 'relu':
+        elif activation is 'relu':
             self.activation = 1
-        elif activation == 'sigmoid':
+        elif activation is 'sigmoid':
             self.activation = 2
         else:
             raise TypeError("activation must be relu or none.")

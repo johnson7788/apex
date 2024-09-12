@@ -9,15 +9,9 @@ try:
 except ImportError:
     reference_available = False
 
-SKIP_TEST = None
-try:
-    from apex.contrib.focal_loss import focal_loss
-except ImportError as e:
-    SKIP_TEST = e
+from apex.contrib.focal_loss import focal_loss
 
 
-@unittest.skipIf(SKIP_TEST, f"{SKIP_TEST}")
-@unittest.skipIf(not reference_available, "Reference implementation `torchvision.ops.focal_loss.sigmoid_focal_loss` is not available.")
 class FocalLossTest(unittest.TestCase):
 
     N_SAMPLES = 12

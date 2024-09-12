@@ -32,7 +32,6 @@ from apex.transformer.tensor_parallel.mappings import (
     gather_from_tensor_model_parallel_region,
     reduce_from_tensor_model_parallel_region,
     scatter_to_tensor_model_parallel_region,
-    scatter_to_sequence_parallel_region,
 )
 
 from .random import (
@@ -63,7 +62,6 @@ __all__ = [
     "gather_from_tensor_model_parallel_region",
     "reduce_from_tensor_model_parallel_region",
     "scatter_to_tensor_model_parallel_region",
-    "scatter_to_sequence_parallel_region",
     # random.py
     "checkpoint",
     "get_cuda_rng_tracker",

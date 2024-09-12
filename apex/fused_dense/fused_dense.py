@@ -1,8 +1,7 @@
 import torch
 from torch import nn
 import fused_dense_cuda
-from apex._autocast_utils import _cast_if_autocast_enabled
-
+from .. import amp
 #implements fused GEMM+bias in forward pass using mlp_cuda from apex
 class FusedDenseFunc(torch.autograd.Function):
     @staticmethod
@@ -46,38 +45,28 @@ class FusedDenseGeluDenseFunc(torch.autograd.Function):
         grad_input, grad_weight1, grad_bias1, grad_weight2, grad_bias2 = fused_dense_cuda.linear_gelu_linear_backward(input, gelu_in, output1, weight1, weight2, grad_output)
         return grad_input, grad_weight1, grad_bias1, grad_weight2, grad_bias2
 
-def _fused_dense(input, weight, bias):
-    args = _cast_if_autocast_enabled(input, weight, bias)
-    with torch.amp.autocast('cuda', enabled=False):
-        return FusedDenseFunc.apply(*args)
 
-def _dense_no_bias(input, weight):
-    args = _cast_if_autocast_enabled(input, weight)
-    with torch.amp.autocast('cuda', enabled=False):
-        return DenseNoBiasFunc.apply(*args)
-
-def _fused_dense_gelu_dense(input, weight1, bias1, weight2, bias2):
-    args = _cast_if_autocast_enabled(input, weight1, bias1, weight2, bias2)
-    with torch.amp.autocast('cuda', enabled=False):
-        return FusedDenseGeluDenseFunc.apply(*args)
+fused_dense_function = amp.half_function(FusedDenseFunc.apply)
+dense_no_bias_function = amp.half_function(DenseNoBiasFunc.apply)
+fused_dense_gelu_dense_function = amp.half_function(FusedDenseGeluDenseFunc.apply)
 
 class FusedDense(nn.Module):
     def __init__(self, in_features, out_features, bias=True):
         super(FusedDense, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.weight = nn.Parameter(torch.empty(out_features, in_features))
+        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
         if bias:
-            self.bias = nn.Parameter(torch.empty(out_features))
+            self.bias = nn.Parameter(torch.Tensor(out_features))
         else:
             #assert False, "no-bias option not added yet"
             self.register_parameter('bias', None)
 
     def forward(self, input):
         if self.bias is not None:
-            return _fused_dense(input, self.weight, self.bias)
+            return fused_dense_function(input, self.weight, self.bias)
         else:
-            return _dense_no_bias(input, self.weight)
+            return dense_no_bias_function(input, self.weight)
 
 class FusedDenseGeluDense(nn.Module):
     def __init__(self, in_features, intermediate_features, out_features, bias=True):
@@ -86,10 +75,11 @@ class FusedDenseGeluDense(nn.Module):
         self.in_features = in_features
         self.intermediate_features = intermediate_features
         self.out_features = out_features
-        self.weight1 = nn.Parameter(torch.empty(intermediate_features, in_features))
-        self.bias1 = nn.Parameter(torch.empty(intermediate_features))
-        self.weight2 = nn.Parameter(torch.empty(out_features, intermediate_features))
-        self.bias2 = nn.Parameter(torch.empty(out_features))
+        self.weight1 = nn.Parameter(torch.Tensor(intermediate_features, in_features))
+        self.bias1 = nn.Parameter(torch.Tensor(intermediate_features))
+        self.weight2 = nn.Parameter(torch.Tensor(out_features, intermediate_features))
+        self.bias2 = nn.Parameter(torch.Tensor(out_features))
 
     def forward(self, input):
-        return _fused_dense_gelu_dense(input, self.weight1, self.bias1, self.weight2, self.bias2)
+        return fused_dense_gelu_dense_function(input, self.weight1, self.bias1, self.weight2, self.bias2)
+

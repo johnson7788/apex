@@ -31,7 +31,6 @@
 #include <algorithm>
 #include <vector>
 #include <string>
-#include <iostream>
 
 #include "nhwc_batch_norm_kernel.h"
 #include "cuda_utils.h"

@@ -32,18 +32,16 @@ import fmhalib as mha
 
 class FMHAFun(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, qkv, cu_seqlens, p_dropout, max_s, is_training, zero_tensors):
+    def forward(ctx, qkv, cu_seqlens, p_dropout, max_s, is_training):
         batch_size = cu_seqlens.numel() - 1
         if batch_size < 4:
-            max_s = 512
-            context, S_dmask = mha.fwd_nl(qkv, cu_seqlens, p_dropout, max_s, is_training, True, zero_tensors, None)
+            context, S_dmask = mha.fwd_nl(qkv, cu_seqlens, p_dropout, max_s, is_training, None)
         else:
-            context, S_dmask = mha.fwd(qkv, cu_seqlens, p_dropout, max_s, is_training, False, zero_tensors, None)
+            context, S_dmask = mha.fwd(qkv, cu_seqlens, p_dropout, max_s, is_training, None)
         ctx.save_for_backward(qkv, S_dmask)
         ctx.cu_seqlens = cu_seqlens
         ctx.p_dropout = p_dropout
         ctx.max_s = max_s
-        ctx.zero_tensors = zero_tensors
         return context
     
     @staticmethod
@@ -51,11 +49,11 @@ class FMHAFun(torch.autograd.Function):
         qkv, S_dmask = ctx.saved_tensors
         batch_size = ctx.cu_seqlens.numel() - 1
         if batch_size < 4:
-            dqkv, dp, _ = mha.bwd_nl(dout, qkv, S_dmask, ctx.cu_seqlens, ctx.p_dropout, ctx.max_s, ctx.zero_tensors)
+            dqkv, dp, _ = mha.bwd_nl(dout, qkv, S_dmask, ctx.cu_seqlens, ctx.p_dropout, ctx.max_s)
         else:
-            dqkv, dp = mha.bwd(dout, qkv, S_dmask, ctx.cu_seqlens, ctx.p_dropout, ctx.max_s, ctx.zero_tensors)
+            dqkv, dp = mha.bwd(dout, qkv, S_dmask, ctx.cu_seqlens, ctx.p_dropout, ctx.max_s)
 
-        return dqkv, None, None, None, None, None
+        return dqkv, None, None, None, None, None, None
 
 class FMHA(torch.nn.Module):
 
@@ -69,8 +67,8 @@ class FMHA(torch.nn.Module):
         self.d = self.hidden_size // self.h
         assert self.d * self.h == self.hidden_size, "Invalid hidden size/num_heads"
 
-    def forward(self, qkv, cu_seqlens, max_s, is_training=True, zero_tensors=False):
+    def forward(self, qkv, cu_seqlens, max_s, is_training=True):
 
-        ctx = FMHAFun.apply(qkv.view(-1, 3, self.h, self.d), cu_seqlens, self.p_dropout, max_s, is_training, zero_tensors)
+        ctx = FMHAFun.apply(qkv.view(-1, 3, self.h, self.d), cu_seqlens, self.p_dropout, max_s, is_training)
 
         return ctx.view(-1, self.hidden_size)

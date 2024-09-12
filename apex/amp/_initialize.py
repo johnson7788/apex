@@ -1,13 +1,11 @@
-import collections.abc as container_abcs
-from types import MethodType
-import functools
-import sys
-import warnings
-
-import numpy as np
 import torch
-
-from ._amp_state import _amp_state, warn_or_err
+from torch._six import string_classes
+import functools
+import numpy as np
+import sys
+from types import MethodType
+import warnings
+from ._amp_state import _amp_state, warn_or_err, container_abcs
 from .handle import disable_casts
 from .scaler import LossScaler
 from ._process_optimizer import _process_optimizer
@@ -41,7 +39,7 @@ def to_type(dtype, t):
 def applier(value, fn):
     if isinstance(value, torch.Tensor):
         return fn(value)
-    elif isinstance(value, str):
+    elif isinstance(value, string_classes):
         return value
     elif isinstance(value, np.ndarray):
         return value

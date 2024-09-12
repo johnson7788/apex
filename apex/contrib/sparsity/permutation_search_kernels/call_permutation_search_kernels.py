@@ -2,18 +2,17 @@ import numpy as np
 from .permutation_utilities import *
 from .exhaustive_search import Exhaustive_Search
 
-def accelerated_search_for_good_permutation(matrix_group, options=None, verbosity=0):
+def accelerated_search_for_good_permutation(matrix_group, options=None):
     """This function is used to call the permutation search CUDA kernels.
     users can provide prefer search strategy by providing a valid 'options' as a dictionary,
     or users can implement their customized 'accelerated_search_for_good_permutation' function.
     """
     input_matrix = matrix_group.cpu().detach().numpy()
-    if verbosity > 1:
-        print("\n[accelerated_search_for_good_permutation] input matrix shape: \'{:}\'.".format(input_matrix.shape))
+    print("\n[accelerated_search_for_good_permutation] input matrix shape: \'{:}\'.".format(input_matrix.shape))
 
     result = np.copy(input_matrix)
     # init a sequential permutation search sequence
-    input_channel_num = matrix_group.size(1)
+    input_channel_num = matrix_group.size()[1]
     permutation_sequence = [n for n in range(input_channel_num)]
     duration = 0.0
 
@@ -21,9 +20,7 @@ def accelerated_search_for_good_permutation(matrix_group, options=None, verbosit
         options = {}
     if 'strategy' not in options:    # right now, the default permutation search strategy is: 'exhaustive' search
         options['strategy'] = 'exhaustive'
-
-    if verbosity > 1:
-        print("[accelerated_search_for_good_permutation] the permutation strategy is: \'{:} search\'.".format(options['strategy']))
+    print("[accelerated_search_for_good_permutation] the permutation strategy is: \'{:} search\'.".format(options['strategy']))
 
     # define sub options for each search strategy
     if options['strategy'] == 'exhaustive':
@@ -58,16 +55,20 @@ def accelerated_search_for_good_permutation(matrix_group, options=None, verbosit
                 permutation_sequence[src], permutation_sequence[dst] = permutation_sequence[dst], permutation_sequence[src]
                 real_swap_num += 1
         duration = time.perf_counter() - start_time
-        if verbosity > 1:
-            print("\tFinally swap {} channel pairs until the search time limit expires.".format(real_swap_num))
+        print("\tFinally swap {} channel pairs until the search time limit expires.".format(real_swap_num))
     elif options['strategy'] == 'user defined':    # need to get the permutated matrix (result) by applying customized permutation search function
-        if verbosity > 1:
-            print("[accelerated_search_for_good_permutation] Use the user customized permutation search function!")
+        print("[accelerated_search_for_good_permutation] Use the user customized permutation search function!")
     else:
-        if verbosity >= 0:
-            print("[accelerated_search_for_good_permutation] Cannot find the implementation of the required strategy!")
-    
-    if verbosity > 1:
-        print("[accelerated_search_for_good_permutation] Take {:.4f} seconds to search the permutation sequence.".format(duration))
+        print("[accelerated_search_for_good_permutation] Cannot find the implementation of the required strategy!")
+    print("[accelerated_search_for_good_permutation] Take {:.4f} seconds to search the permutation sequence.".format(duration))
+
+    # In the new version of Exhaustive_Search function, there’s no need to use the find_permutation(result, input_matrix) function
+    # to recover the permutation sequence applied to the input_matrix to get the result separately any more.
+    #start_time_find_permutation = time.perf_counter()
+    #permutation_sequence = find_permutation(result, input_matrix)
+    #duration_find_permutation = time.perf_counter() - start_time_find_permutation
+    #print("[accelerated_search_for_good_permutation] Take {:.4f} seconds to finish find_permutation function.".format(duration_find_permutation))
+    #print("[accelerated_search_for_good_permutation] The permutation sequence is: {:}".format(permutation_sequence))
+    #print("[accelerated_search_for_good_permutation] The length of permutation sequence is: {:}".format(len(permutation_sequence)))
 
     return permutation_sequence

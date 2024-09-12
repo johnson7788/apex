@@ -50,9 +50,9 @@ class TestMultiTensorL2Norm(unittest.TestCase):
 
         reference = torch.cuda.FloatTensor((sizea + sizeb)*repeat_tensors).fill_(self.val).norm()
 
-        torch.testing.assert_close(norm, reference.broadcast_to(norm.shape))
+        self.assertTrue(torch.allclose(norm, reference))
         if per_tensor:
-          torch.testing.assert_close(norm_per_tensor, normab.broadcast_to(norm_per_tensor.shape))
+          self.assertTrue(torch.allclose(norm_per_tensor, normab))
         self.assertTrue(self.overflow_buf.item() == 0)
 
     @unittest.skipIf(disabled, "amp_C is unavailable")

@@ -141,7 +141,7 @@ inline __device__ void compute_dv_1xN(const Params &params) {
 
     enum { BITS_PER_ELT_S = sizeof(fmha::A_type) * 8 };
 
-    Gmem_tile_s gmem_s(params, binfo, tidx);
+    Gmem_tile_s gmem_s(params.s_ptr, params, tidx);
 
     // Create the object to do the softmax.
     using Softmax = fmha::Softmax<Cta_tile_p, Kernel_traits>;
@@ -231,7 +231,7 @@ inline __device__ void compute_dv_1xN(const Params &params) {
         }
 
         float p_sum[2 * M];
-        softmax.reduce_sum(p_sum);
+        softmax.template reduce<fmha::Sum_>(p_sum);
 
         const float scalef = reinterpret_cast<const float &>(params.scale_softmax);
         #pragma unroll
@@ -406,7 +406,7 @@ inline __device__ void compute_dq_dk_1xN(const Params &params) {
     // Trigger the loads for K.
     gmem_k.load(smem_k);
 
-    Gmem_tile_s gmem_s(params, binfo, tidx);
+    Gmem_tile_s gmem_s(params.s_ptr, params, tidx);
     // Load dP
     uint4 s_regs[M][N];
     gmem_s.load(s_regs, mask);

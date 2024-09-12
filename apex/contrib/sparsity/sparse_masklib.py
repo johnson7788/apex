@@ -29,8 +29,8 @@ def compute_valid_1d_patterns(m,n):
     if m==4  and n==2 and valid_m4n2_1d_patterns  is not None: return valid_m4n2_1d_patterns
     patterns = torch.zeros(m)
     patterns[:n] = 1
-    valid_patterns = torch.tensor(list(set(permutations(patterns.tolist()))))
-    if m == 4 and n == 2: valid_m4n2_1d_patterns = valid_patterns
+    valid_patterns = torch.Tensor(list(set(permutations(patterns.tolist()))))
+    if m == 4  and n == 2: valid_m4n2_1d_patterns  = valid_patterns       
     return valid_patterns
 
 """ m:n 1d structured best """
@@ -109,10 +109,10 @@ def compute_valid_2d_patterns(m,n):
     patterns[:n] = 1
     patterns = list(set(permutations(patterns.tolist())))
     patterns = patterns + patterns
-    patterns = torch.empty(list(set(permutations(patterns,m))))
+    patterns = torch.Tensor(list(set(permutations(patterns,m))))
 
     valid = ((patterns.sum(dim=1) <= n).sum(dim=1) == m).nonzero().view(-1)
-    valid_patterns = torch.empty(valid.shape[0],m,m)
+    valid_patterns = torch.Tensor(valid.shape[0],m,m)
     valid_patterns[:] = patterns[valid[:]]
 
     if m == 4  and n == 2: valid_m4n2_2d_patterns  = valid_patterns
@@ -154,22 +154,19 @@ def create_mask(tensor, pattern="m4n2_1d", density=0.5):
         func = getattr(sys.modules[__name__], pattern, None)
         mask = func(t, density)
         return mask.view(shape).type(ttype)
-    # 2d-tensor (K, C)
+    # 2d-tensor (in, out)
     elif len(shape) == 2:
-        # linear
         t = t.view(shape[0], shape[1])
         func = getattr(sys.modules[__name__], pattern, None)
         mask = func(t, density)
         return mask.view(shape).type(ttype)
-    # 3d-tensor (K, C, R)
+    # 3d-tensor (batch, in, out)
     elif len(shape) == 3:
-        # 1d convs
-        t = t.permute(0,2,1).contiguous().view(shape[0]*shape[2], shape[1])
+        t = t.view(shape[0]*shape[1], shape[2])
         func = getattr(sys.modules[__name__], pattern, None)
         mask = func(t, density)
-        mask = mask.view(shape[0], shape[2], shape[1]).permute(0,2,1).contiguous()     
         return mask.view(shape).type(ttype)
-    # 4d-tensor (K, C, R, S)
+    # 4d-tensor (in, out, h, w)
     elif len(shape) == 4:
         """
         # transformers (bmm)
@@ -178,7 +175,7 @@ def create_mask(tensor, pattern="m4n2_1d", density=0.5):
         mask = func(t, density)
         return mask.view(shape).type(ttype)
         """
-        # 2d convs
+        # convs
         t = t.permute(2,3,0,1).contiguous().view(shape[2]*shape[3]*shape[0], shape[1])
         func = getattr(sys.modules[__name__], pattern, None)
         mask = func(t, density)

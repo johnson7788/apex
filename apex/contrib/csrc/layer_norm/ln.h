@@ -1,7 +1,5 @@
 #pragma once
 
-#include <stdint.h>
-#include <stdio.h>
 #include <unordered_map>
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
@@ -10,7 +8,7 @@ namespace layer_norm {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename Params>
+template<typename Params> 
 struct LaunchParams{
 
     size_t workspace_bytes;
@@ -26,20 +24,17 @@ struct LaunchParams{
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct FwdParams{
-    FwdParams()
+struct ParamsBase {
+    ParamsBase()
         : ctas_per_col(0)
         , rows(0)
         , cols(0)
         , x(nullptr)
-        , z(nullptr)
         , mu(nullptr)
         , rs(nullptr)
         , gamma(nullptr)
-        , beta(nullptr)
         , workspace(nullptr)
         , barrier(nullptr)
-        , epsilon(0.f)
     {
     }
 
@@ -52,11 +47,9 @@ struct FwdParams{
 
     // Common data pointers.
     void *x;
-    void *z;
     void *mu;
     void *rs;
     void *gamma;
-    void *beta;
 
     // Multi-CTA workspace in gmem.
     void *workspace;
@@ -64,15 +57,31 @@ struct FwdParams{
     // Multi-CTA sync barriers in gmem.
     int *barrier;
 
-    // Output of LN FWD.
-    float epsilon;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct BwdParams : public  FwdParams{
+struct FwdParams : public ParamsBase {
+    FwdParams()
+        : ParamsBase()
+        , z(nullptr)
+        , beta(nullptr)
+        , epsilon(0.f)
+    {
+    }
+
+    // Output of LN FWD.
+    void *z;
+    void *beta;
+    float epsilon;
+
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct BwdParams : public ParamsBase {
     BwdParams()
-        : FwdParams()
+        : ParamsBase()
         , dz(nullptr)
         , dbeta_part(nullptr)
         , dgamma_part(nullptr)
@@ -81,6 +90,7 @@ struct BwdParams : public  FwdParams{
         , dgamma(nullptr)
     {
     }
+
     // Input: gradient wrt. LN FWD output.
     void *dz;
 
@@ -188,4 +198,3 @@ struct BwdRegistrar{
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace layer_norm
-

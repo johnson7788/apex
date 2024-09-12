@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2021-22, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,13 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# NOTE(mkozuki): This file is based on megatron-lm/mpu/random.py with some differences:
-#   - Not using "viewless" tensor:
-#     - _kernel_make_viewless_tensor
-#     - MakeViewlessTensor
-#     - make_viewless_tensor
-#     - assert_viewless_tensor
-#     - safely_set_viewless_tensor_data
+# TODO (mkozuki): Audit this file.
+# I don't think some functions strongly relate to `random` in tensor_parallel.
+# Rather, some functions are mainly for gradient checkpointing (torch.utils.checkpoint).
 
 # Parts of the code here are adapted from PyTorch
 # repo: https://github.com/pytorch/pytorch
@@ -39,12 +35,13 @@ from apex.transformer.utils import gather_split_1d_tensor
 # Default name for the model parallel rng tracker.
 _MODEL_PARALLEL_RNG_TRACKER_NAME = "model-parallel-rng"
 
-# TODO(mkozuki): Remove `_CHECKPOINTED_ACTIVATIONS_MEMORY_BUFFER` as megatron-lm doesn't seem to use.
+
 # Whether apply model parallelism to checkpointed hidden states.
 _CHECKPOINTED_ACTIVATIONS_MEMORY_BUFFER = None
 
 
-# TODO(mkozuki): Remove `init_checkpointed_activations_memory_buffer` as megatron-lm doesn't seem to use.
+# TODO (mkozuki): Consider the possibility of removing `tensor_model_parallel_size`,
+# `get_tensor_model_parallel_world_size()` might be alternative.
 def init_checkpointed_activations_memory_buffer(
     micro_batch_size,
     max_position_embeddings,
@@ -80,7 +77,6 @@ def init_checkpointed_activations_memory_buffer(
     )
 
 
-# TODO(mkozuki): Remove `reset_checkpointed_activations_memory_buffer` as megatron-lm doesn't seem to use.
 def reset_checkpointed_activations_memory_buffer():
     """Reset the memory used for checkpointing."""
     if _CHECKPOINTED_ACTIVATIONS_MEMORY_BUFFER is not None:
@@ -90,7 +86,7 @@ def reset_checkpointed_activations_memory_buffer():
 def _set_cuda_rng_state(new_state, device=-1):
     """Sets the random number generator state of the current GPU.
 
-    Arguments:
+    Argumentss:
         new_state (torch.ByteTensor): The desired state
     This function is adapted from PyTorch repo (torch.cuda.set_rng_state)
     with a single change: the input state is not cloned. Cloning caused
@@ -243,9 +239,8 @@ class CheckpointFunction(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, run_function, distribute_saved_activations, *args):
+    def forward(ctx, run_function, *args):
         ctx.run_function = run_function
-        ctx.distribute_saved_activations = distribute_saved_activations
 
         # Copy the rng states.
         ctx.fwd_cpu_rng_state = torch.get_rng_state()
@@ -257,8 +252,10 @@ class CheckpointFunction(torch.autograd.Function):
 
         # Divide hidden states across model parallel group and only keep
         # the chunk corresponding to the current rank.
-        if ctx.distribute_saved_activations:
-            ctx.input_0_shape = args[0].shape
+        if _CHECKPOINTED_ACTIVATIONS_MEMORY_BUFFER is not None:
+            ctx.input_0_shape = args[0].data.shape
+            args[0].data = split_tensor_into_1d_equal_chunks(args[0].data)
+            args[0].data = _CHECKPOINTED_ACTIVATIONS_MEMORY_BUFFER.add(args[0].data)
 
         # Store everything.
         ctx.save_for_backward(*args)
@@ -272,6 +269,9 @@ class CheckpointFunction(torch.autograd.Function):
                 "please use .backward() if possible"
             )
         inputs = ctx.saved_tensors
+        if _CHECKPOINTED_ACTIVATIONS_MEMORY_BUFFER is not None:
+            inputs[0].data = gather_split_1d_tensor(inputs[0].data)
+            inputs[0].data = inputs[0].data.view(ctx.input_0_shape)
 
         # Store the current states.
         bwd_cpu_rng_state = torch.get_rng_state()
@@ -300,12 +300,10 @@ class CheckpointFunction(torch.autograd.Function):
             inp.grad if isinstance(inp, torch.Tensor) else inp
             for inp in detached_inputs
         )
-        return (None, None) + grads
+        return (None,) + grads
 
 
-# NOTE(mkozuki): It doesn't look like `distribute_saved_activations` is used in apex.transformer
-# but I added this change to reduce the superficial difference from Megatron-LM.
-def checkpoint(function, distribute_saved_activations, *args):
+def checkpoint(function, *args):
     """Checkpoint a model or part of the model.
     This has been directly copied from torch.utils.checkpoint."""
-    return CheckpointFunction.apply(function, distribute_saved_activations, *args)
+    return CheckpointFunction.apply(function, *args)

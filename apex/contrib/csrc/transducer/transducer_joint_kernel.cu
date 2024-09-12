@@ -1,21 +1,14 @@
-#include <cuda.h>
-#include <curand_kernel.h>
-#include <cuda_runtime.h>
-
 #include <torch/extension.h>
-#include <ATen/AccumulateType.h>
-
-#ifdef OLD_GENERATOR_PATH
-#include <ATen/CUDAGeneratorImpl.h>
-#else
-#include <ATen/cuda/CUDAGeneratorImpl.h>
-#endif
-
-#include <ATen/cuda/CUDAContext.h>
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
+#include <cuda.h>
+#include <cuda_runtime.h>
 #include <c10/macros/Macros.h>
-
-#include "philox.cuh"
+#include <THC/THC.h>
+#include <ATen/AccumulateType.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <ATen/CUDAGeneratorImpl.h>
+#include <ATen/cuda/CUDAGraphsUtils.cuh>
+#include <curand_kernel.h>
+#include "philox.h"
 
 // Warp reduce kernels to reduce N groups of data into N numbers, where N = warpSize / width.
 // width should be a power of 2 and should be less than warpSize.
@@ -829,7 +822,7 @@ std::vector<torch::Tensor> transducer_joint_cuda_forward(
         }));  
     }
  
-    C10_CUDA_CHECK(cudaGetLastError());
+    THCudaCheck(cudaGetLastError());
     if (masked) 
         return {sum, mask};
     else

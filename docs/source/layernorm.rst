@@ -12,6 +12,3 @@ apex.normalization.fused_layer_norm
 
 .. autoclass:: FusedLayerNorm
     :members:
-
-.. autoclass:: FusedRMSNorm
-    :members:
